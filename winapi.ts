@@ -53,10 +53,20 @@ if (Deno.build.os === "windows") {
     // https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-readfile
     ReadFile: {
       nonblocking: true,
-      parameters: ["isize", "buffer", "u32", "buffer", "usize"],
+      parameters: ["isize", "buffer", "u32", "buffer", "buffer"],
       result: "i32",
     },
-    // casting until FFI buffer support is on canary only
+
+    GetOverlappedResult: {
+      nonblocking: true,
+      parameters: ["isize", "buffer", "buffer", "u8"],
+      result: "i32",
+    },
+
+    GetLastError: {
+      parameters: [],
+      result: "u32",
+    },
   } as Record<string, Deno.ForeignFunction>);
 } else {
   lib = undefined as any;
@@ -158,4 +168,52 @@ export async function ReadFile(
     lpNumberOfBytesRead ?? NULL,
     lpOverlapped ?? NULL,
   )) as number;
+}
+
+export async function GetOverlappedResult(
+  hFile: number,
+  lpOverlapped: Uint8Array,
+  lpNumberOfBytesTransferred: Uint8Array,
+  bWait: boolean = false,
+) {
+  checkSupported();
+  return (await lib.symbols.GetOverlappedResult(
+    hFile,
+    lpOverlapped,
+    lpNumberOfBytesTransferred,
+    bWait ? 1 : 0,
+  )) as number;
+}
+
+export class Overlapped {
+  data = new Uint8Array(
+    8 + /** ULONG_PTR Internal */
+      8 + /** ULONG_PTR InternalHigh */
+      8 + /** PVOID Pointer */
+      8, /** HANDLE hEvent */
+  );
+
+  constructor(public handle: number) {}
+
+  async getResult(wait = false) {
+    const bytesTransferred = new Uint8Array(4);
+
+    const result = await GetOverlappedResult(
+      this.handle,
+      this.data,
+      bytesTransferred,
+      wait,
+    );
+
+    if (result !== 1) {
+      throw new Error(`GetOverlappedResult failed`);
+    }
+
+    return new Uint32Array(bytesTransferred.buffer)[0];
+  }
+}
+
+export function GetLastError() {
+  checkSupported();
+  return lib.symbols.GetLastError() as number;
 }

@@ -6,6 +6,7 @@ import {
   GENERIC_WRITE,
   NULL,
   OPEN_EXISTING,
+  Overlapped,
   PeekNamedPipe,
   ReadFile,
   WriteFile,
@@ -82,18 +83,20 @@ export class NamedPipe implements Deno.Conn {
     this.#checkClosed();
 
     const bytesRead = new Uint8Array(4);
-    let res;
+    const overlapped = new Overlapped(this.handle);
     if (
-      (res = await ReadFile(
+      (await ReadFile(
         this.handle,
         into,
         into.length,
         bytesRead,
-        null,
-      ))
+        overlapped.data,
+      )) === 1
     ) {
       return new Uint32Array(bytesRead.buffer)[0];
-    } else throw new Error(`Failed to read from NamedPipe: ${res}`);
+    } else {
+      return await overlapped.getResult(true);
+    }
   }
 
   #checkClosed() {
@@ -108,16 +111,6 @@ export class NamedPipe implements Deno.Conn {
   }
 }
 
-/**
- * Connects to the given Named Pipe.
- *
- * Example:
- *
- *     const conn = await connect("\\\\?\\pipe\\discord-ipc-0");
- *
- * @param name File name (actually path of named pipe).
- * @returns Named Pipe instance, partially implements `Deno.Conn`.
- */
 export async function connect(name: string) {
   return new NamedPipe(
     name,
