@@ -12,6 +12,16 @@ import {
   WriteFile,
 } from "./winapi.ts";
 
+/**
+ * Represents a Named Pipe (client) connection.
+ *
+ * Partially implements the `Deno.Conn` interface with a few caveats:
+ *
+ * - `rid` is not a Deno resource table ID, but WinAPI HANDLE.
+ * - `closeWrite` is not implemented and throws when used.
+ *
+ * Do not construct directly, use `open` function instead.
+ */
 export class NamedPipe implements Deno.Conn {
   #closed = false;
 
@@ -70,7 +80,7 @@ export class NamedPipe implements Deno.Conn {
       this.handle,
       data,
       data.length,
-      null,
+      new Uint8Array(4), // TODO: Replace with null once buffer arg becomes nullable
       overlapped.data,
     );
 
@@ -118,6 +128,12 @@ export class NamedPipe implements Deno.Conn {
   }
 }
 
+/**
+ * Connects to the given named pipe.
+ *
+ * @param name Named Pipe name. Example: `\\.\pipe\name-here`
+ * @returns NamedPipe Client instance
+ */
 export async function connect(name: string) {
   return new NamedPipe(
     name,
