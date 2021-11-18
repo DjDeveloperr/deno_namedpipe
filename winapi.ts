@@ -45,7 +45,7 @@ if (Deno.build.os === "windows") {
         "buffer", /* lpBuffer */
         "u32", /* nNumberOfBytesToWrite */
         "buffer", /* lpNumberOfBytesWritten */
-        "usize", /* lpOverlapped */
+        "buffer", /* lpOverlapped */
       ],
       result: "i32",
     },
@@ -195,6 +195,14 @@ export class Overlapped {
 
   constructor(public handle: number) {}
 
+  get internal(): bigint {
+    return new BigUint64Array(this.data.buffer.slice(0, 8))[0];
+  }
+
+  get internalHigh(): bigint {
+    return new BigUint64Array(this.data.buffer.slice(8, 16))[0];
+  }
+
   async getResult(wait = false) {
     const bytesTransferred = new Uint8Array(4);
 
@@ -210,6 +218,10 @@ export class Overlapped {
     }
 
     return new Uint32Array(bytesTransferred.buffer)[0];
+  }
+
+  [Symbol.for("Deno.customInspect")]() {
+    return `Overlapped(Status: ${this.internal}, ByteTransfer: ${this.internalHigh})`;
   }
 }
 

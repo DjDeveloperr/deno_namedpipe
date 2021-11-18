@@ -63,39 +63,46 @@ export class NamedPipe implements Deno.Conn {
   }
 
   async write(data: Uint8Array) {
-    const bytesWritten = new Uint8Array(4);
+    this.#checkClosed();
 
-    let res;
-    if (
-      (res = await WriteFile(
-        this.handle,
-        data,
-        data.length,
-        bytesWritten,
-        null,
-      ))
-    ) {
-      return new Uint32Array(bytesWritten.buffer)[0];
-    } else throw new Error(`Failed to write to NamedPipe: ${res}`);
+    const overlapped = new Overlapped(this.handle);
+    await WriteFile(
+      this.handle,
+      data,
+      data.length,
+      null,
+      overlapped.data,
+    );
+
+    let write = await overlapped.getResult(true);
+    while (overlapped.internal === 259n) {
+      write = await overlapped.getResult(true);
+    }
+
+    return write;
   }
 
   async read(into: Uint8Array) {
     this.#checkClosed();
 
-    const bytesRead = new Uint8Array(4);
-    const overlapped = new Overlapped(this.handle);
-    if (
-      (await ReadFile(
+    try {
+      const overlapped = new Overlapped(this.handle);
+      await ReadFile(
         this.handle,
         into,
         into.length,
-        bytesRead,
+        null,
         overlapped.data,
-      )) === 1
-    ) {
-      return new Uint32Array(bytesRead.buffer)[0];
-    } else {
-      return await overlapped.getResult(true);
+      );
+
+      let read = await overlapped.getResult(true);
+      while (overlapped.internal === 259n) {
+        read = await overlapped.getResult(true);
+      }
+
+      return read;
+    } catch (e) {
+      throw e;
     }
   }
 
