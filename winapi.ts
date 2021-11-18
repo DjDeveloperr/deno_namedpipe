@@ -57,6 +57,22 @@ if (Deno.build.os === "windows") {
       result: "i32",
     },
 
+    // https://docs.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createnamedpipea
+    CreateNamedPipeA: {
+      nonblocking: true,
+      parameters: [
+        "buffer", /* lpName */
+        "u32", /* dwOpenMode */
+        "u32", /* dwPipeMode */
+        "u32", /* nMaxInstances */
+        "u32", /* nOutBufferSize */
+        "u32", /* nInBufferSize */
+        "u32", /* nDefaultTimeOut */
+        "usize", /* lpSecurityAttributes */
+      ],
+      result: "isize",
+    },
+
     GetOverlappedResult: {
       nonblocking: true,
       parameters: ["isize", "buffer", "buffer", "u8"],
@@ -84,11 +100,29 @@ function cstr(str: string) {
   return res;
 }
 
+export const INVALID_HANDLE_VALUE = -1;
 export const GENERIC_READ = 0x80000000;
 export const GENERIC_WRITE = 0x40000000;
 export const GENERIC_EXECUTE = 0x20000000;
 export const OPEN_EXISTING = 3;
 export const FILE_FLAG_OVERLAPPED = 0x40000000;
+export const PIPE_ACCESS_DUPLEX = 0x00000003;
+export const PIPE_ACCESS_INBOUND = 0x00000001;
+export const PIPE_ACCESS_OUTBOUND = 0x00000002;
+export const FILE_FLAG_FIRST_PIPE_INSTANCE = 0x00080000;
+export const FILE_FLAG_WRITE_THROUGH = 0x80000000;
+export const WRITE_DAC = 0x00040000;
+export const WRITE_OWNER = 0x00080000;
+export const ACCESS_SYSTEM_SECURITY = 0x01000000;
+export const PIPE_TYPE_BYTE = 0x00000000;
+export const PIPE_TYPE_MESSAGE = 0x00000004;
+export const PIPE_READMODE_BYTE = 0x00000000;
+export const PIPE_READMODE_MESSAGE = 0x00000002;
+export const PIPE_WAIT = 0x00000000;
+export const PIPE_NOWAIT = 0x00000001;
+export const PIPE_ACCEPT_REMOTE_CLIENTS = 0x00000000;
+export const PIPE_REJECT_REMOTE_CLIENTS = 0x00000008;
+export const PIPE_UNLIMITED_INSTANCES = 255;
 
 export async function CreateFileA(
   lpFileName: string,
@@ -109,7 +143,7 @@ export async function CreateFileA(
     dwFlagsAndAttributes >>> 0,
     hTemplateFile,
   )) as number;
-  if (handle < 0) throw new Error(`CreateFileA failed`);
+  if (handle === INVALID_HANDLE_VALUE) throw new Error(`CreateFileA failed`);
   return handle;
 }
 
@@ -196,11 +230,11 @@ export class Overlapped {
   constructor(public handle: number) {}
 
   get internal(): bigint {
-    return new BigUint64Array(this.data.buffer.slice(0, 8))[0];
+    return new BigUint64Array(this.data.buffer, 0, 1)[0];
   }
 
   get internalHigh(): bigint {
-    return new BigUint64Array(this.data.buffer.slice(8, 16))[0];
+    return new BigUint64Array(this.data.buffer, 8, 1)[0];
   }
 
   async getResult(wait = false) {
@@ -228,4 +262,31 @@ export class Overlapped {
 export function GetLastError() {
   checkSupported();
   return lib.symbols.GetLastError() as number;
+}
+
+export async function CreateNamedPipeA(
+  lpName: string,
+  dwOpenMode: number,
+  dwPipeMode: number,
+  nMaxInstances: number,
+  nOutBufferSize: number,
+  nInBufferSize: number,
+  nDefaultTimeOut: number,
+  lpSecurityAttributes: number = NULL,
+) {
+  checkSupported();
+  const handle = (await lib.symbols.CreateNamedPipeA(
+    cstr(lpName),
+    dwOpenMode >>> 0,
+    dwPipeMode >>> 0,
+    nMaxInstances >>> 0,
+    nOutBufferSize >>> 0,
+    nInBufferSize >>> 0,
+    nDefaultTimeOut >>> 0,
+    lpSecurityAttributes,
+  )) as number;
+  if (handle === INVALID_HANDLE_VALUE) {
+    throw new Error(`CreateNamedPipeA failed`);
+  }
+  return handle;
 }

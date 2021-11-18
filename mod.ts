@@ -91,7 +91,7 @@ export class NamedPipe implements Deno.Conn {
         this.handle,
         into,
         into.length,
-        null,
+        new Uint8Array(4), // TODO: Replace with null once buffer arg becomes nullable
         overlapped.data,
       );
 
