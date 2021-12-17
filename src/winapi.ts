@@ -4,60 +4,62 @@ if (Deno.build.os === "windows") {
     CreateFileA: {
       nonblocking: true,
       parameters: [
-        "buffer", /* lpFileName */
+        "pointer", /* lpFileName */
         "u32", /* dwDesiredAccess */
         "u32", /* dwShareMode */
-        "usize", /* lpSecurityAttributes */
+        "pointer", /* lpSecurityAttributes */
         "u32", /* dwCreationDisposition */
         "u32", /* dwFlagsAndAttributes */
-        "usize", /* hTemplateFile */
+        "pointer", /* hTemplateFile */
       ],
-      result: "isize",
+      result: "pointer",
     },
 
     // https://docs.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-peeknamedpipe
     PeekNamedPipe: {
       nonblocking: true,
       parameters: [
-        "isize", /* hNamedPipe */
-        "buffer", /* lpBuffer */
+        "pointer", /* hNamedPipe */
+        "pointer", /* lpBuffer */
         "u32", /* nBufferSize */
-        "buffer", /* lpBytesRead */
-        "buffer", /* lpTotalBytesAvail */
-        "buffer", /* lpBytesLeftThisMessage */
+        "pointer", /* lpBytesRead */
+        "pointer", /* lpTotalBytesAvail */
+        "pointer", /* lpBytesLeftThisMessage */
       ],
       result: "i32",
     },
 
     // https://docs.microsoft.com/en-us/windows/win32/api/handleapi/nf-handleapi-closehandle
     CloseHandle: {
-      parameters: ["isize"],
+      parameters: ["pointer"],
       result: "i32",
     },
 
     // https://docs.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-disconnectnamedpipe
     DisconnectNamedPipe: {
-      parameters: ["isize"],
+      parameters: ["pointer"],
       result: "i32",
     },
 
     // https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-writefile
     WriteFile: {
-      nonblocking: true,
+      // nonblocking: true,
       parameters: [
-        "isize", /* hFile */
-        "buffer", /* lpBuffer */
+        "pointer", /* hFile */
+        "pointer", /* lpBuffer */
         "u32", /* nNumberOfBytesToWrite */
-        "usize", /* lpNumberOfBytesWritten */
-        "buffer", /* lpOverlapped */
+        "pointer", /* lpNumberOfBytesWritten */
+        "pointer", /* lpOverlapped */
       ],
       result: "i32",
     },
 
     // https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-readfile
     ReadFile: {
-      nonblocking: true,
-      parameters: ["isize", "buffer", "u32", "usize", "buffer"],
+      // In Overlapped IO, Read returns immediately, and the completion
+      // is signaled by the OVERLAPPED structure.
+      // nonblocking: true,
+      parameters: ["pointer", "pointer", "u32", "pointer", "pointer"],
       result: "i32",
     },
 
@@ -65,29 +67,29 @@ if (Deno.build.os === "windows") {
     CreateNamedPipeA: {
       // nonblocking: true,
       parameters: [
-        "buffer", /* lpName */
+        "pointer", /* lpName */
         "u32", /* dwOpenMode */
         "u32", /* dwPipeMode */
         "u32", /* nMaxInstances */
         "u32", /* nOutBufferSize */
         "u32", /* nInBufferSize */
         "u32", /* nDefaultTimeOut */
-        "usize", /* lpSecurityAttributes */
+        "pointer", /* lpSecurityAttributes */
       ],
-      result: "isize",
+      result: "pointer",
     },
 
     // https://docs.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-connectnamedpipe
     ConnectNamedPipe: {
       nonblocking: true,
-      parameters: ["isize", "buffer"],
+      parameters: ["pointer", "pointer"],
       result: "i32",
     },
 
     // https://docs.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-getoverlappedresult
     GetOverlappedResult: {
       nonblocking: true,
-      parameters: ["isize", "buffer", "buffer", "u8"],
+      parameters: ["pointer", "pointer", "pointer", "u8"],
       result: "i32",
     },
   });
@@ -129,31 +131,33 @@ export const PIPE_ACCEPT_REMOTE_CLIENTS = 0x00000000;
 export const PIPE_REJECT_REMOTE_CLIENTS = 0x00000008;
 export const PIPE_UNLIMITED_INSTANCES = 255;
 
+export type HANDLE = Deno.UnsafePointer;
+
 export async function CreateFileA(
   lpFileName: string,
   dwDesiredAccess: number,
   dwShareMode: number,
-  lpSecurityAttributes: number,
   dwCreationDisposition: number,
   dwFlagsAndAttributes: number,
-  hTemplateFile: number,
 ) {
   checkSupported();
   const handle = (await lib.symbols.CreateFileA(
     cstr(lpFileName),
     dwDesiredAccess >>> 0,
     dwShareMode >>> 0,
-    lpSecurityAttributes,
+    new Deno.UnsafePointer(0n),
     dwCreationDisposition >>> 0,
     dwFlagsAndAttributes >>> 0,
-    hTemplateFile,
-  )) as number;
-  if (handle === INVALID_HANDLE_VALUE) throw new Error(`CreateFileA failed`);
+    new Deno.UnsafePointer(0n),
+  )) as HANDLE;
+  if (handle.value === BigInt(INVALID_HANDLE_VALUE)) {
+    throw new Error(`CreateFileA failed`);
+  }
   return handle;
 }
 
 export async function PeekNamedPipe(
-  hNamedPipe: number,
+  hNamedPipe: HANDLE,
   lpBuffer: Uint8Array,
   lpBytesRead: Uint8Array,
   lpTotalBytesAvail: Uint8Array,
@@ -170,45 +174,45 @@ export async function PeekNamedPipe(
   )) as number;
 }
 
-export function CloseHandle(handle: number) {
+export function CloseHandle(handle: HANDLE) {
   checkSupported();
   return lib.symbols.CloseHandle(handle) as number;
 }
 
-export async function WriteFile(
-  hFile: number,
+export function WriteFile(
+  hFile: HANDLE,
   lpBuffer: Uint8Array,
   nNumberOfBytesToWrite: number,
   lpOverlapped: Uint8Array,
 ) {
   checkSupported();
-  return (await lib.symbols.WriteFile(
+  return (lib.symbols.WriteFile(
     hFile,
     lpBuffer,
     nNumberOfBytesToWrite,
-    0,
+    new Deno.UnsafePointer(0n),
     lpOverlapped,
   )) as number;
 }
 
-export async function ReadFile(
-  hFile: number,
+export function ReadFile(
+  hFile: HANDLE,
   lpBuffer: Uint8Array,
   nNumberOfBytesToRead: number,
   lpOverlapped: Uint8Array,
 ) {
   checkSupported();
-  return (await lib.symbols.ReadFile(
+  return (lib.symbols.ReadFile(
     hFile,
     lpBuffer,
     nNumberOfBytesToRead,
-    0,
+    new Deno.UnsafePointer(0n),
     lpOverlapped,
   )) as number;
 }
 
 export async function GetOverlappedResult(
-  hFile: number,
+  hFile: HANDLE,
   lpOverlapped: Uint8Array,
   lpNumberOfBytesTransferred: Uint8Array,
   bWait: boolean = false,
@@ -230,7 +234,7 @@ export class Overlapped {
       8, /** HANDLE hEvent */
   );
 
-  constructor(public handle: number) {}
+  constructor(public handle: HANDLE) {}
 
   get internal(): bigint {
     return new BigUint64Array(this.data.buffer, 0, 1)[0];
@@ -270,7 +274,6 @@ export function CreateNamedPipeA(
   nOutBufferSize: number,
   nInBufferSize: number,
   nDefaultTimeOut: number,
-  lpSecurityAttributes = 0,
 ) {
   checkSupported();
   const handle = lib.symbols.CreateNamedPipeA(
@@ -281,16 +284,16 @@ export function CreateNamedPipeA(
     nOutBufferSize >>> 0,
     nInBufferSize >>> 0,
     nDefaultTimeOut >>> 0,
-    lpSecurityAttributes,
-  ) as number;
-  if (handle === INVALID_HANDLE_VALUE) {
+    new Deno.UnsafePointer(0n),
+  ) as HANDLE;
+  if (handle.value === BigInt(INVALID_HANDLE_VALUE)) {
     throw new Error(`CreateNamedPipeA failed`);
   }
   return handle;
 }
 
 export async function ConnectNamedPipe(
-  hNamedPipe: number,
+  hNamedPipe: HANDLE,
   lpOverlapped: Uint8Array,
 ) {
   checkSupported();
@@ -300,7 +303,7 @@ export async function ConnectNamedPipe(
   )) as number;
 }
 
-export function DisconnectNamedPipe(hNamedPipe: number) {
+export function DisconnectNamedPipe(hNamedPipe: HANDLE) {
   checkSupported();
   return lib.symbols.DisconnectNamedPipe(hNamedPipe) as number;
 }

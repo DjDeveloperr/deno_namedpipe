@@ -5,6 +5,7 @@ import {
   FILE_FLAG_OVERLAPPED,
   GENERIC_READ,
   GENERIC_WRITE,
+  HANDLE,
   OPEN_EXISTING,
   Overlapped,
   PeekNamedPipe,
@@ -27,7 +28,7 @@ export class NamedPipe implements Deno.Conn {
 
   constructor(
     public name: string,
-    public handle: number,
+    public handle: HANDLE,
     private isServerConn = false,
   ) {}
 
@@ -40,7 +41,7 @@ export class NamedPipe implements Deno.Conn {
   }
 
   get rid() {
-    return this.handle;
+    return Number(this.handle.value);
   }
 
   closeWrite(): Promise<void> {
@@ -76,7 +77,7 @@ export class NamedPipe implements Deno.Conn {
     this.#checkClosed();
 
     const overlapped = new Overlapped(this.handle);
-    await WriteFile(
+    WriteFile(
       this.handle,
       data,
       data.length,
@@ -91,27 +92,23 @@ export class NamedPipe implements Deno.Conn {
     return write;
   }
 
-  async read(into: Uint8Array) {
+  async read(into: Uint8Array): Promise<any> {
     this.#checkClosed();
 
-    try {
-      const overlapped = new Overlapped(this.handle);
-      await ReadFile(
-        this.handle,
-        into,
-        into.length,
-        overlapped.data,
-      );
+    const overlapped = new Overlapped(this.handle);
+    ReadFile(
+      this.handle,
+      into,
+      into.length,
+      overlapped.data,
+    );
 
-      let read = await overlapped.getResult(true);
-      while (overlapped.internal === 259n) {
-        read = await overlapped.getResult(true);
-      }
-
-      return read;
-    } catch (e) {
-      throw e;
+    await overlapped.getResult(true);
+    while (overlapped.internal === 259n) {
+      await overlapped.getResult(true);
     }
+
+    return Number(overlapped.internalHigh);
   }
 
   #checkClosed() {
@@ -140,10 +137,8 @@ export async function connect(name: string) {
       name,
       GENERIC_READ | GENERIC_WRITE,
       0,
-      0,
       OPEN_EXISTING,
       FILE_FLAG_OVERLAPPED,
-      0,
     ),
   );
 }
