@@ -1,4 +1,5 @@
 if (Deno.build.os === "windows") {
+  // deno-lint-ignore no-var no-inner-declarations
   var lib = Deno.dlopen("C:\\Windows\\System32\\Kernel32.dll", {
     // https://docs.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-createfilea
     CreateFileA: {
@@ -125,7 +126,7 @@ function checkSupported() {
 
 function cstr(str: string) {
   const res = new Uint8Array(str.length + 1);
-  res.set((Deno as any).core.encode(str));
+  new TextEncoder().encodeInto(str, res);
   return res;
 }
 
@@ -245,7 +246,7 @@ export async function GetOverlappedResult(
   hFile: HANDLE,
   lpOverlapped: Uint8Array,
   lpNumberOfBytesTransferred: Uint32Array,
-  bWait: boolean = false,
+  bWait = false,
 ) {
   checkSupported();
   return (await lib.symbols.GetOverlappedResult(

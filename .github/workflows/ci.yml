@@ -36,4 +36,4 @@ jobs:
           deno-version: v1.x
 
       - name: Type check
-        run: deno run --unstable mod.ts
+        run: deno run --allow-ffi --unstable mod.ts

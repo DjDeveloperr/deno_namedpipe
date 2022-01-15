@@ -38,7 +38,10 @@ export class NamedPipe implements Deno.Conn {
   }
 
   get remoteAddr(): Deno.Addr {
-    return { transport: "win32" as any, path: this.name };
+    return {
+      transport: "win32" as Deno.UnixAddr["transport"],
+      path: this.name,
+    };
   }
 
   get rid() {
