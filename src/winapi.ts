@@ -17,7 +17,6 @@ if (Deno.build.os === "windows") {
 
     // https://docs.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-peeknamedpipe
     PeekNamedPipe: {
-      nonblocking: true,
       parameters: [
         "pointer", /* hNamedPipe */
         "pointer", /* lpBuffer */
@@ -92,6 +91,29 @@ if (Deno.build.os === "windows") {
       parameters: ["pointer", "pointer", "pointer", "u8"],
       result: "i32",
     },
+
+    CancelIoEx: {
+      parameters: ["pointer", "pointer"],
+      result: "i32",
+    },
+
+    GetLastError: {
+      parameters: [],
+      result: "u32",
+    },
+
+    FormatMessageA: {
+      parameters: [
+        "u32",
+        "pointer",
+        "u32",
+        "u32",
+        "pointer",
+        "u32",
+        "pointer",
+      ],
+      result: "i32",
+    },
   });
 }
 
@@ -156,27 +178,29 @@ export async function CreateFileA(
   return handle;
 }
 
-export async function PeekNamedPipe(
+export function PeekNamedPipe(
   hNamedPipe: HANDLE,
-  lpBuffer: Uint8Array,
-  lpBytesRead: Uint8Array,
-  lpTotalBytesAvail: Uint8Array,
-  lpBytesLeftThisMessage: Uint8Array,
+  lpBuffer: Uint8Array | null,
+  lpBytesRead: Uint32Array,
+  lpTotalBytesAvail: Uint32Array,
+  lpBytesLeftThisMessage: Uint32Array,
 ) {
   checkSupported();
-  return (await lib.symbols.PeekNamedPipe(
-    hNamedPipe,
-    lpBuffer,
-    lpBuffer.byteLength >>> 0,
-    lpBytesRead,
-    lpTotalBytesAvail,
-    lpBytesLeftThisMessage,
-  )) as number;
+  UnwrapError(
+    lib.symbols.PeekNamedPipe(
+      hNamedPipe,
+      lpBuffer,
+      (lpBuffer?.byteLength ?? 0) >>> 0,
+      lpBytesRead,
+      lpTotalBytesAvail,
+      lpBytesLeftThisMessage,
+    ),
+  );
 }
 
 export function CloseHandle(handle: HANDLE) {
   checkSupported();
-  return lib.symbols.CloseHandle(handle) as number;
+  UnwrapError(lib.symbols.CloseHandle(handle));
 }
 
 export function WriteFile(
@@ -186,13 +210,16 @@ export function WriteFile(
   lpOverlapped: Uint8Array,
 ) {
   checkSupported();
-  return (lib.symbols.WriteFile(
-    hFile,
-    lpBuffer,
-    nNumberOfBytesToWrite,
-    new Deno.UnsafePointer(0n),
-    lpOverlapped,
-  )) as number;
+  UnwrapError(
+    lib.symbols.WriteFile(
+      hFile,
+      lpBuffer,
+      nNumberOfBytesToWrite,
+      new Deno.UnsafePointer(0n),
+      lpOverlapped,
+    ),
+    [997],
+  );
 }
 
 export function ReadFile(
@@ -202,19 +229,22 @@ export function ReadFile(
   lpOverlapped: Uint8Array,
 ) {
   checkSupported();
-  return (lib.symbols.ReadFile(
-    hFile,
-    lpBuffer,
-    nNumberOfBytesToRead,
-    new Deno.UnsafePointer(0n),
-    lpOverlapped,
-  )) as number;
+  UnwrapError(
+    lib.symbols.ReadFile(
+      hFile,
+      lpBuffer,
+      nNumberOfBytesToRead,
+      new Deno.UnsafePointer(0n),
+      lpOverlapped,
+    ),
+    [997],
+  );
 }
 
 export async function GetOverlappedResult(
   hFile: HANDLE,
   lpOverlapped: Uint8Array,
-  lpNumberOfBytesTransferred: Uint8Array,
+  lpNumberOfBytesTransferred: Uint32Array,
   bWait: boolean = false,
 ) {
   checkSupported();
@@ -245,7 +275,7 @@ export class Overlapped {
   }
 
   async getResult(wait = false) {
-    const bytesTransferred = new Uint8Array(4);
+    const bytesTransferred = new Uint32Array(1);
 
     const result = await GetOverlappedResult(
       this.handle,
@@ -258,11 +288,11 @@ export class Overlapped {
       throw new Error(`GetOverlappedResult failed`);
     }
 
-    return new Uint32Array(bytesTransferred.buffer)[0];
+    return bytesTransferred[0];
   }
 
   [Symbol.for("Deno.customInspect")]() {
-    return `Overlapped(Status: ${this.internal}, ByteTransfer: ${this.internalHigh})`;
+    return `Overlapped { status: ${this.internal}, byteTransfer: ${this.internalHigh} }`;
   }
 }
 
@@ -297,13 +327,55 @@ export async function ConnectNamedPipe(
   lpOverlapped: Uint8Array,
 ) {
   checkSupported();
-  return (await lib.symbols.ConnectNamedPipe(
-    hNamedPipe,
-    lpOverlapped,
-  )) as number;
+  UnwrapError(
+    await lib.symbols.ConnectNamedPipe(
+      hNamedPipe,
+      lpOverlapped,
+    ),
+  );
 }
 
 export function DisconnectNamedPipe(hNamedPipe: HANDLE) {
   checkSupported();
-  return lib.symbols.DisconnectNamedPipe(hNamedPipe) as number;
+  UnwrapError(lib.symbols.DisconnectNamedPipe(hNamedPipe));
+}
+
+export function CancelIoEx(hFile: HANDLE, lpOverlapped: Uint8Array) {
+  checkSupported();
+  UnwrapError(lib.symbols.CancelIoEx(hFile, lpOverlapped));
+}
+
+export function GetLastError(): number {
+  checkSupported();
+  return lib.symbols.GetLastError() as number;
+}
+
+export function FormatMessage(errCode: number): string {
+  checkSupported();
+
+  const lpBufferPtr = new BigUint64Array(1);
+
+  lib.symbols.FormatMessageA(
+    0x00000100 | 0x00001000 | 0x00000200,
+    null,
+    errCode,
+    0,
+    lpBufferPtr,
+    0,
+    null,
+  ) as number;
+
+  const lpBufferView = new Deno.UnsafePointerView(
+    new Deno.UnsafePointer(lpBufferPtr[0]),
+  );
+  return lpBufferView.getCString();
+}
+
+export function UnwrapError(result: unknown, exclude: number[] = []) {
+  if (result === 0) {
+    const lastError = GetLastError();
+    if (lastError === 0 || exclude.includes(lastError)) return;
+    const message = FormatMessage(lastError);
+    throw new Error(`(${lastError}) ${message}`);
+  }
 }

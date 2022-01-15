@@ -1,4 +1,5 @@
 import {
+  CancelIoEx,
   CloseHandle,
   CreateFileA,
   DisconnectNamedPipe,
@@ -28,7 +29,7 @@ export class NamedPipe implements Deno.Conn {
 
   constructor(
     public name: string,
-    public handle: HANDLE,
+    private handle: HANDLE,
     private isServerConn = false,
   ) {}
 
@@ -37,7 +38,7 @@ export class NamedPipe implements Deno.Conn {
   }
 
   get remoteAddr(): Deno.Addr {
-    return { transport: "unix", path: this.name };
+    return { transport: "win32" as any, path: this.name };
   }
 
   get rid() {
@@ -48,30 +49,28 @@ export class NamedPipe implements Deno.Conn {
     throw new Error("Method not implemented.");
   }
 
-  async peek(into?: Uint8Array) {
+  peek(into?: Uint8Array) {
     this.#checkClosed();
 
-    const bytesRead = new Uint8Array(4);
-    const totalBytesAvail = new Uint8Array(4);
-    const bytesLeftThisMessage = new Uint8Array(4);
+    const bytesRead = new Uint32Array(1);
+    const totalBytesAvail = new Uint32Array(1);
+    const bytesLeftThisMessage = new Uint32Array(1);
 
-    let res;
-    if (
-      (res = await PeekNamedPipe(
-        this.handle,
-        into ?? new Uint8Array(0),
-        bytesRead,
-        totalBytesAvail,
-        bytesLeftThisMessage,
-      ))
-    ) {
-      return {
-        bytesRead: new Uint32Array(bytesRead.buffer)[0],
-        totalBytesAvailable: new Uint32Array(totalBytesAvail.buffer)[0],
-        bytesLeftThisMessage: new Uint32Array(bytesLeftThisMessage.buffer)[0],
-      };
-    } else throw new Error(`Failed to Peek Named Pipe: ${res}`);
+    PeekNamedPipe(
+      this.handle,
+      into ?? null,
+      bytesRead,
+      totalBytesAvail,
+      bytesLeftThisMessage,
+    );
+    return {
+      bytesRead: bytesRead[0],
+      totalBytesAvailable: totalBytesAvail[0],
+      bytesLeftThisMessage: bytesLeftThisMessage[0],
+    };
   }
+
+  #pending = new Set<Overlapped>();
 
   async write(data: Uint8Array) {
     this.#checkClosed();
@@ -84,16 +83,20 @@ export class NamedPipe implements Deno.Conn {
       overlapped.data,
     );
 
+    this.#pending.add(overlapped);
+
     let write = await overlapped.getResult(true);
     while (overlapped.internal === 259n) {
       write = await overlapped.getResult(true);
     }
 
+    this.#pending.delete(overlapped);
+
     return write;
   }
 
-  async read(into: Uint8Array): Promise<any> {
-    this.#checkClosed();
+  async read(into: Uint8Array): Promise<number | null> {
+    if (this.#closed) return null;
 
     const overlapped = new Overlapped(this.handle);
     ReadFile(
@@ -103,10 +106,14 @@ export class NamedPipe implements Deno.Conn {
       overlapped.data,
     );
 
+    this.#pending.add(overlapped);
+
     await overlapped.getResult(true);
     while (overlapped.internal === 259n) {
       await overlapped.getResult(true);
     }
+
+    this.#pending.delete(overlapped);
 
     return Number(overlapped.internalHigh);
   }
@@ -117,15 +124,20 @@ export class NamedPipe implements Deno.Conn {
 
   close() {
     this.#checkClosed();
+    for (const overlapped of this.#pending) {
+      CancelIoEx(this.handle, overlapped.data);
+    }
     if (this.isServerConn) DisconnectNamedPipe(this.handle);
-    let res = CloseHandle(this.handle);
-    if (res === 1) this.#closed = true;
-    else throw new Error(`Failed to close NamedPipe: ${res}`);
+    CloseHandle(this.handle);
+    this.#closed = true;
   }
 }
 
 /**
- * Connects to the given named pipe.
+ * Connects to the given named pipe. Similar to `Deno.connect`,
+ * since NamedPipe implements `Deno.Conn`, so you can safely
+ * swap out `Deno.connect` for this `connect` to support Named
+ * Pipe in place of Unix Sockets on Windows.
  *
  * @param name Named Pipe name. Example: `\\.\pipe\name-here`
  * @returns NamedPipe Client instance
