@@ -135,11 +135,11 @@ export class NamedPipe implements Deno.Conn {
     this.#closed = true;
   }
 
-  setNoDelay(_: boolean) {
+  setNoDelay(_?: boolean) {
     throw new Error("Unimplemented");
   }
 
-  setKeepAlive(_: boolean) {
+  setKeepAlive(_?: boolean) {
     throw new Error("Unimplemented");
   }
 }
