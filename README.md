@@ -25,6 +25,6 @@ read/write operation on the file which limits the usecase I had.
 
 ## License
 
-Licensed under Apache 2.0. Check [LICENSE](./LICENSE) for more info.
+Apache-2.0 licensed. Check [LICENSE](./LICENSE) for more info.
 
-Copyright 2021 @ DjDeveloperr
+Copyright 2022 © DjDeveloperr
