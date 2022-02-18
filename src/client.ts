@@ -142,6 +142,66 @@ export class NamedPipe implements Deno.Conn {
   setKeepAlive(_?: boolean) {
     throw new Error("Unimplemented");
   }
+
+  #tryClose() {
+    try {
+      this.close();
+    } catch (_) {
+      // do nothing
+    }
+  }
+
+  get readable() {
+    // deno-lint-ignore no-this-alias
+    const scope = this;
+    return new ReadableStream({
+      type: "bytes",
+      async pull(ctx) {
+        const v = ctx.byobRequest!.view as Uint8Array;
+        try {
+          const n = await scope.read(v);
+          if (n === null) {
+            scope.#tryClose();
+            ctx.close();
+            ctx.byobRequest!.respond(0);
+          } else {
+            ctx.byobRequest!.respond(n);
+          }
+        } catch (e) {
+          ctx.error(e);
+          scope.#tryClose();
+        }
+      },
+      cancel() {
+        scope.#tryClose();
+      },
+      autoAllocateChunkSize: 16_640,
+    });
+  }
+
+  get writable() {
+    // deno-lint-ignore no-this-alias
+    const scope = this;
+    return new WritableStream({
+      async write(chunk, ctx) {
+        try {
+          let written = 0;
+          while (written < chunk.length) {
+            written += await scope.write(chunk.subarray(written));
+          }
+        } catch (e) {
+          ctx.error(e);
+          scope.#tryClose();
+        }
+      },
+      close() {
+        scope.#tryClose();
+      },
+      abort() {
+        scope.#tryClose();
+      },
+    });
+  }
 }
 
 /**
