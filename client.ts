@@ -1,18 +1,10 @@
 import {
-  CancelIoEx,
-  CloseHandle,
-  CreateFileA,
-  DisconnectNamedPipe,
-  FILE_FLAG_OVERLAPPED,
-  GENERIC_READ,
-  GENERIC_WRITE,
-  HANDLE,
-  OPEN_EXISTING,
-  Overlapped,
-  PeekNamedPipe,
-  ReadFile,
-  WriteFile,
-} from "./winapi.ts";
+  Foundation,
+  OverlappedPromise,
+  Pipes,
+  Storage,
+  unwrap,
+} from "./deps.ts";
 
 /**
  * Represents a Named Pipe (client) connection.
@@ -29,9 +21,11 @@ export class NamedPipe implements Deno.Conn {
 
   constructor(
     public name: string,
-    private handle: HANDLE,
+    private handle: Deno.PointerValue,
     private isServerConn = false,
-  ) {}
+  ) {
+    unwrap(Number(handle));
+  }
 
   get localAddr(): Deno.Addr {
     return this.remoteAddr;
@@ -45,7 +39,7 @@ export class NamedPipe implements Deno.Conn {
   }
 
   get rid() {
-    return Number(this.handle.value);
+    return Number(this.handle);
   }
 
   closeWrite(): Promise<void> {
@@ -59,13 +53,14 @@ export class NamedPipe implements Deno.Conn {
     const totalBytesAvail = new Uint32Array(1);
     const bytesLeftThisMessage = new Uint32Array(1);
 
-    PeekNamedPipe(
+    unwrap(Pipes.PeekNamedPipe(
       this.handle,
       into ?? null,
-      bytesRead,
-      totalBytesAvail,
-      bytesLeftThisMessage,
-    );
+      into?.length ?? 0,
+      new Uint8Array(bytesRead.buffer),
+      new Uint8Array(totalBytesAvail.buffer),
+      new Uint8Array(bytesLeftThisMessage.buffer),
+    ));
     return {
       bytesRead: bytesRead[0],
       totalBytesAvailable: totalBytesAvail[0],
@@ -73,52 +68,46 @@ export class NamedPipe implements Deno.Conn {
     };
   }
 
-  #pending = new Set<Overlapped>();
+  #pending = new Set<AbortController>();
 
   async write(data: Uint8Array) {
     this.#checkClosed();
 
-    const overlapped = new Overlapped(this.handle);
-    WriteFile(
+    const controller = new AbortController();
+    const overlapped = new OverlappedPromise(this.handle, controller.signal);
+    unwrap(Storage.WriteFile(
       this.handle,
       data,
       data.length,
-      overlapped.data,
-    );
+      null,
+      overlapped.buffer,
+    ));
 
-    this.#pending.add(overlapped);
+    this.#pending.add(controller);
 
-    let write = await overlapped.getResult(true);
-    while (overlapped.internal === 259n) {
-      write = await overlapped.getResult(true);
-    }
-
-    this.#pending.delete(overlapped);
-
-    return write;
+    return await overlapped.catch((_) => 0).finally(() => {
+      this.#pending.delete(controller);
+    });
   }
 
   async read(into: Uint8Array): Promise<number | null> {
     if (this.#closed) return null;
 
-    const overlapped = new Overlapped(this.handle);
-    ReadFile(
+    const controller = new AbortController();
+    const overlapped = new OverlappedPromise(this.handle, controller.signal);
+    unwrap(Storage.ReadFile(
       this.handle,
       into,
-      into.length,
-      overlapped.data,
-    );
+      into.byteLength,
+      null,
+      overlapped.buffer,
+    ));
 
-    this.#pending.add(overlapped);
+    this.#pending.add(controller);
 
-    await overlapped.getResult(true);
-    while (overlapped.internal === 259n) {
-      await overlapped.getResult(true);
-    }
-
-    this.#pending.delete(overlapped);
-
-    return Number(overlapped.internalHigh);
+    return await overlapped.catch((_) => 0).finally(() => {
+      this.#pending.delete(controller);
+    });
   }
 
   #checkClosed() {
@@ -127,11 +116,11 @@ export class NamedPipe implements Deno.Conn {
 
   close() {
     this.#checkClosed();
-    for (const overlapped of this.#pending) {
-      CancelIoEx(this.handle, overlapped.data);
+    for (const sig of this.#pending) {
+      sig.abort("NamedPipe closed");
     }
-    if (this.isServerConn) DisconnectNamedPipe(this.handle);
-    CloseHandle(this.handle);
+    if (this.isServerConn) Pipes.DisconnectNamedPipe(this.handle);
+    Foundation.CloseHandle(this.handle);
     this.#closed = true;
   }
 
@@ -216,12 +205,14 @@ export class NamedPipe implements Deno.Conn {
 export async function connect(name: string) {
   return new NamedPipe(
     name,
-    await CreateFileA(
+    (await Storage.CreateFileAAsync(
       name,
-      GENERIC_READ | GENERIC_WRITE,
+      (Storage.FILE_GENERIC_READ | Storage.FILE_GENERIC_WRITE) >>> 0,
       0,
-      OPEN_EXISTING,
-      FILE_FLAG_OVERLAPPED,
-    ),
+      0,
+      Storage.OPEN_EXISTING >>> 0,
+      Storage.FILE_FLAG_OVERLAPPED >>> 0,
+      null,
+    ))!,
   );
 }
