@@ -1,4 +1,4 @@
-# deno_namedpipe
+# Deno Namedpipe
 
 Asynchronous Named Pipes support for Deno, built on WinAPI using FFI.
 
@@ -27,4 +27,4 @@ read/write operation on the file which limits the usecase I had.
 
 Apache-2.0 licensed. Check [LICENSE](./LICENSE) for more info.
 
-Copyright 2022 © DjDeveloperr
+Copyright 2022-2023 © DjDeveloperr
