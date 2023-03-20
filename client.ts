@@ -24,7 +24,15 @@ export class NamedPipe implements Deno.Conn {
     private handle: Deno.PointerValue,
     private isServerConn = false,
   ) {
-    unwrap(Number(handle));
+    unwrap(Number(Deno.UnsafePointer.value(handle)));
+  }
+
+  ref(): void {
+    throw new Error("Method not implemented.");
+  }
+
+  unref(): void {
+    throw new Error("Method not implemented.");
   }
 
   get localAddr(): Deno.Addr {
@@ -209,7 +217,7 @@ export async function connect(name: string) {
       name,
       (Storage.FILE_GENERIC_READ | Storage.FILE_GENERIC_WRITE) >>> 0,
       0,
-      0,
+      null,
       Storage.OPEN_EXISTING >>> 0,
       Storage.FILE_FLAG_OVERLAPPED >>> 0,
       null,

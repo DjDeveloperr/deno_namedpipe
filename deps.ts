@@ -1,7 +1,7 @@
-export * as Io from "https://deno.land/x/win@0.2.0/api/System/IO.ts";
-export * as Pipes from "https://deno.land/x/win@0.2.0/api/System/Pipes.ts";
-export * as Debug from "https://deno.land/x/win@0.2.0/api/System/Diagnostics/Debug.ts";
-export * as Storage from "https://deno.land/x/win@0.2.0/api/Storage/FileSystem.ts";
-export * as Foundation from "https://deno.land/x/win@0.2.0/api/Foundation.ts";
-export { OverlappedPromise } from "https://deno.land/x/win@0.2.0/overlapped.ts";
-export { unwrap } from "https://deno.land/x/win@0.2.0/error.ts";
+export * as Io from "https://win32.deno.dev/0.4.1/System.IO";
+export * as Pipes from "https://win32.deno.dev/0.4.1/System.Pipes";
+export * as Debug from "https://win32.deno.dev/0.4.1/System.Diagnostics.Debug";
+export * as Storage from "https://win32.deno.dev/0.4.1/Storage.FileSystem";
+export * as Foundation from "https://win32.deno.dev/0.4.1/Foundation";
+export { OverlappedPromise } from "https://win32.deno.dev/0.4.1/overlapped";
+export { unwrap } from "https://win32.deno.dev/0.4.1/error";
